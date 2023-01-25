@@ -242,9 +242,10 @@ void changeUserRole(int clientSocket, std::string request) {
     }
   }
 
-  void broadcastMessage(int roomId, std::string message) {
+  void broadcastMessage(int roomId, std::string message, int userId) {
     for (auto user : rooms_[roomId].users_) {
-        send(user.getSocket(), message.c_str(), message.length(), 0);
+      if (user.getId() == userId) continue;
+      send(user.getSocket(), message.c_str(), message.length(), 0);
     }
   }
   
@@ -259,7 +260,7 @@ void changeUserRole(int clientSocket, std::string request) {
     // Send a note to the client
     std::string message = note;
     message += '\n';
-    broadcastMessage(roomId, message);
+    broadcastMessage(roomId, message, userId);
   }
 
   void handleRequests(int clientSocket) {
