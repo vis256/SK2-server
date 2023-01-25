@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <string.h>
 #include <stdexcept>
+#include <sstream>
 
 #define HEARTBEAT_INTERVAL 10
 
@@ -186,11 +187,10 @@ class Server {
 void changeUserRole(int clientSocket, std::string request) {
     // Extract roomId, userId and role from the request string
     size_t space1 = request.find(' ');
-    size_t space2 = request.substr(space1).find(' ');
-    int roomId = std::stoi(request.substr(space2));
-    size_t space3 = request.find(' ', space1 + 1);
+    size_t space2 = request.substr(space1+1).find(' ');
+    int roomId = std::stoi(request.substr(0, space1));
     int userId = std::stoi(request.substr(space1 + 1, space2 - space1 - 1));
-    char role = request[space2 + 1];
+    char role = request[space1 + space2 + 2];
 
     // Change the role of the user
     if (role == 'M') {
@@ -203,7 +203,7 @@ void changeUserRole(int clientSocket, std::string request) {
     }
 
     // Send a confirmation message to the client
-    std::string message = "Role changed to ";
+    std::string message = "ROLE|";
     message += role;
     message += '\n';
     send(clientSocket, message.c_str(), message.length(), 0);
@@ -242,13 +242,11 @@ void changeUserRole(int clientSocket, std::string request) {
   void broadcastMessage(int roomId, std::string message, int userId) {
     for (auto user : rooms_[roomId].users_) {
       if (user.getId() == userId) continue;
-      std::cout << 
       send(user.getSocket(), message.c_str(), message.length(), 0);
     }
   }
   
   void sendNotes(int clientSocket, std::string request) {
-    std::cout << "requested=" << request << std::endl;
     // Extract roomId, userId and note from the request string
     size_t space1 = request.find(' ');
     int roomId = std::stoi(request.substr(0, space1));
@@ -266,41 +264,47 @@ void changeUserRole(int clientSocket, std::string request) {
     while (handleRequest(clientSocket)) {;};
   }
 
+  bool checkHeartbeat(int requestSize, int clientSocket) {
+    if (requestSize <= 0) {
+      std::this_thread::sleep_for(std::chrono::seconds(10));
+      std::cout << "[!] " << clientSocket << " disconnected" << std::endl;
+      deleteUserFromAllRooms(clientSocket);
+      close(clientSocket);
+      return false;
+    } else {
+      return true;
+    }
+  }
+
   // Handle a request to create or join a room
   bool handleRequest(int clientSocket) {
-    std::cout << "inside clientSocket: " << clientSocket << std::endl;
     // Wait for the client to send a request to create or join a room
     char requestBuffer[1024];
     int requestSize = recv(clientSocket, requestBuffer, sizeof(requestBuffer), 0);
     
-    if (requestSize <= 0) {
-      // Client disconnected
-      std::cout << clientSocket << " disconnected" << std::endl;
-      deleteUserFromAllRooms(clientSocket);
+    if (!checkHeartbeat(requestSize, clientSocket)) {
       return false;
     }
 
     std::string request = requestBuffer;
 
     std::cout << "[D] request=" << request << std::endl;
-
+    // CREATE NEW ROOM
     if (request.substr(0, 6) == "create") {
-      // Create a new room
       User user(clientSocket, UserRole::MUSICIAN);
       Room room(nextRoomId_++);
       room.addUser(user);
       rooms_[room.getId()] = room;
- 
+  
       char data[128];
       sprintf(data, "JOINNEW|%d %d", room.getId(), user.getId());
 
-      // Send the room ID to the client
       send(clientSocket, data, strlen(data), 0);
-    } else if (request.substr(0, 4) == "join") {
-      // Get the room ID
-      int roomId = std::stoi(request.substr(5));
 
-      // Check if the room exists
+    // JOIN ROOM AS LISTENER
+    } else if (request.substr(0, 4) == "join") {
+      int roomId = std::stoi(request.substr(5));
+      
       if (rooms_.count(roomId) == 0) {
         send(clientSocket, "invalid room|", 13, 0);
         return true;
@@ -309,41 +313,50 @@ void changeUserRole(int clientSocket, std::string request) {
       // Check if the room is full
       Room & room = rooms_[roomId];
       if (room.getUserCount() >= MAX_USERS_PER_ROOM) {
-        send(clientSocket, "room full|", 10, 0);
-        return true;
+      send(clientSocket, "room full|", 10, 0);
+      return true;
       }
 
       // Add the user to the room
       User user(clientSocket, UserRole::USER);
       room.addUser(user);
 
-      // Send the room ID to the client
-      // send(clientSocket, ("JOIN|"+std::to_string(roomId)).c_str(), std::to_string(roomId).size()+17, 0);
       char data[128];
       sprintf(data, "JOIN|%d %d", room.getId(), user.getId());
 
-      // Send the room ID to the client
       send(clientSocket, data, strlen(data), 0);
     } 
+
+    // LIST ALL ROOMS
     else if (request.substr(0, 4) == "list") {
       sendRoomList(clientSocket);
     } 
+
+    // SEND NOTE DATA TO LISTENERS
     else if (request.substr(0, 4) == "NOTE") {
       sendNotes(clientSocket, request.substr(5));
     } 
+
+    // CHANGE ROLE
     else if(request.substr(0, 11) == "change role"){
-        changeUserRole(clientSocket, request.substr(11));
+        changeUserRole(clientSocket, request.substr(12));
     } 
+
+    // LEAVE ROOM
     else if(request.substr(0, 5) == "leave"){ 
       int roomId = std::stoi(request.substr(5,request.find(" ")));
       rooms_[roomId].removeUserById(clientSocket);
       removeEmptyRooms(roomId);
     } 
+
+    // QUIT ie. DISCONNECT FROM SERVER
     else if (request.substr(0, 4) == "quit") {
-    	std::cout << "[D] Client quit" << std::endl;
-    	close(clientSocket);
+      std::cout << "[D] Client quit" << std::endl;
+      close(clientSocket);
       return false;
     }
+
+    // ELSE: INVALID REQUEST
     else {
       // Invalid request
       send(clientSocket, "invalid request|", 17, 0);
