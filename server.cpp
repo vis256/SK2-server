@@ -250,35 +250,29 @@ void changeUserRole(int clientSocket, std::string request) {
   }
   
   void sendNotes(int clientSocket, std::string request) {
+    std::cout << "requested=" << request << std::endl;
     // Extract roomId, userId and note from the request string
     size_t space1 = request.find(' ');
-    size_t space2 = request.substr(space1).find(' ');
-    int roomId = std::stoi(request.substr(space2));
-    size_t space3 = request.find(' ', space1 + 1);
+    int roomId = std::stoi(request.substr(0, space1));
+    size_t space2 = request.find(' ', space1 + 1);
     int userId = std::stoi(request.substr(space1 + 1, space2 - space1 - 1));
-    
     std::string note = request.substr(space2+1);
 
     // Send a note to the client
-    std::string message = note;
+    std::string message = "NOTE|" + note;
     message += '\n';
     broadcastMessage(roomId, message, userId);
   }
 
   void handleRequests(int clientSocket) {
-    while (handleRequest(clientSocket)) {
-      std::cout << "??" << std::endl;
-    };
-
+    while (handleRequest(clientSocket)) {;};
   }
 
   // Handle a request to create or join a room
   bool handleRequest(int clientSocket) {
-    std::cout << clientSocket << std::endl;
     // Wait for the client to send a request to create or join a room
     char requestBuffer[1024];
     int requestSize = recv(clientSocket, requestBuffer, sizeof(requestBuffer), 0);
-    std::cout << "[D] requestSize=" << requestSize << std::endl;
     
     if (requestSize <= 0) {
       // Client disconnected
@@ -335,17 +329,19 @@ void changeUserRole(int clientSocket, std::string request) {
     else if (request.substr(0, 4) == "list") {
       sendRoomList(clientSocket);
     } 
+    else if (request.substr(0, 4) == "NOTE") {
+      sendNotes(clientSocket, request.substr(5));
+    } 
     else if(request.substr(0, 11) == "change role"){
         changeUserRole(clientSocket, request.substr(11));
     } 
     else if(request.substr(0, 5) == "leave"){ 
       int roomId = std::stoi(request.substr(5,request.find(" ")));
       rooms_[roomId].removeUserById(clientSocket);
-      removeEmptyRoom(roomId);
+      removeEmptyRooms(roomId);
     } 
     else if (request.substr(0, 4) == "quit") {
     	std::cout << "[D] Client quit" << std::endl;
-      Re
     	close(clientSocket);
       return false;
     }
@@ -378,18 +374,7 @@ void changeUserRole(int clientSocket, std::string request) {
     //     }
   }
   // Remove empty rooms from the server
- void removeEmptyRooms() {
-    for(auto x : rooms_ ) {
-      auto room = &x.second;
-    
-      if (room.isEmpty()) {
-        rooms_.erase(roomId);
-      }
-    }
-    
-  }
-
-  void removeEmptyRoom(int roomId) {
+  void removeEmptyRooms(int roomId) {
  
       if (rooms_[roomId].isEmpty()) {
         rooms_.erase(roomId);
