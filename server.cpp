@@ -20,14 +20,21 @@ enum class UserRole {
   MUSICIAN
 };
 
+int xd = 0;
+
+
 // Define user class
 class User {
   public: 
-   UserRole role_;
-   User(int socket, UserRole role): socket_(socket),
-  role_(role) {}
-    public: User(int Id, int socket, UserRole role): id_(Id), socket_(socket),
-  role_(role) {}
+  UserRole role_;
+
+  // User(int socket, UserRole role): socket_(socket), role_(role) {}
+  User(int socket, UserRole role) {
+    socket_ = socket;
+    role_ = role;
+    id_ = xd++;
+  }
+  User(int Id, int socket, UserRole role): id_(Id), socket_(socket), role_(role) {}
 
   bool operator == (const User & other) {
     return socket_ == other.socket_;
@@ -46,13 +53,16 @@ class User {
   UserRole getRole() {
     return role_;
   }
+
   int getId() {
     return id_;
   }
-  private: int socket_;
+
+  private: 
+  int socket_;
   int id_;
- 
 };
+
 
 // Define room class
 class Room {
@@ -175,19 +185,6 @@ class Server {
   int nextRoomId_;
 void changeUserRole(int clientSocket, std::string request) {
     // Extract roomId, userId and role from the request string
-    // std::vector<size_t> spacesIndexes;
-    // std::string t = request;
-    // size_t i;
-    // while ( i = t.find(" ") ) {
-    //   t = t.substr(i);
-    //   spacesIndexes.push_back(i);
-    // }
-
-    // for (auto x : spacesIndexes) {
-    //   std::cout << x << std::endl;
-    // }
-
-
     size_t space1 = request.find(' ');
     size_t space2 = request.substr(space1).find(' ');
     int roomId = std::stoi(request.substr(space2));
@@ -245,6 +242,7 @@ void changeUserRole(int clientSocket, std::string request) {
   void broadcastMessage(int roomId, std::string message, int userId) {
     for (auto user : rooms_[roomId].users_) {
       if (user.getId() == userId) continue;
+      std::cout << 
       send(user.getSocket(), message.c_str(), message.length(), 0);
     }
   }
@@ -270,6 +268,7 @@ void changeUserRole(int clientSocket, std::string request) {
 
   // Handle a request to create or join a room
   bool handleRequest(int clientSocket) {
+    std::cout << "inside clientSocket: " << clientSocket << std::endl;
     // Wait for the client to send a request to create or join a room
     char requestBuffer[1024];
     int requestSize = recv(clientSocket, requestBuffer, sizeof(requestBuffer), 0);
