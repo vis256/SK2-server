@@ -68,6 +68,7 @@ class User {
 // Define room class
 class Room {
   public: std::vector < User > users_;
+  bool locked;
 
   int getUserCount() {
     return users_.size();
@@ -77,9 +78,13 @@ class Room {
     return users_;
   }
 
-  Room(int id): id_(id) {}
+  Room(int id): id_(id) {
+    locked = false;
+  }
 
-  Room() {}
+  Room() {
+    locked = false;
+  }
   // Get room's ID
   int getId() {
     return id_;
@@ -183,7 +188,7 @@ class Server {
 
   private: std::map < int,
   Room > rooms_;
-  int nextRoomId_;
+  int nextRoomId_ = 0;
 void changeUserRole(int clientSocket, std::string request) {
     // Extract roomId, userId and role from the request string
     size_t space1 = request.find(' ');
@@ -233,7 +238,7 @@ void changeUserRole(int clientSocket, std::string request) {
   }
 
   void deleteUserFromAllRooms(int socketfd) {
-    for (auto x : rooms_) {
+    for (auto& x : rooms_) {
       auto room = &x.second;
       for (User user : room->getUsers()) {
         if (user.getSocket() == socketfd) {
@@ -272,9 +277,10 @@ void changeUserRole(int clientSocket, std::string request) {
   bool checkHeartbeat(int requestSize, int clientSocket) {
     if (requestSize <= 0) {
       std::this_thread::sleep_for(std::chrono::seconds(10));
+      close(clientSocket);
       std::cout << "[!] " << clientSocket << " disconnected" << std::endl;
       deleteUserFromAllRooms(clientSocket);
-      close(clientSocket);
+      removeEmptyRooms();
       return false;
     } else {
       return true;
@@ -297,10 +303,12 @@ void changeUserRole(int clientSocket, std::string request) {
     // CREATE NEW ROOM
     if (request.substr(0, 6) == "create") {
       User user(clientSocket, UserRole::MUSICIAN);
-      Room room(nextRoomId_++);
+      Room room(nextRoomId_);
+      nextRoomId_++;
       room.addUser(user);
       rooms_[room.getId()] = room;
   
+
       char data[128];
       sprintf(data, "JOINNEW|%d %d", room.getId(), user.getId());
 
@@ -310,7 +318,7 @@ void changeUserRole(int clientSocket, std::string request) {
     } else if (request.substr(0, 4) == "join") {
       int roomId = std::stoi(request.substr(5));
       
-      if (rooms_.count(roomId) == 0) {
+      if (rooms_.count(roomId) == 0 || rooms_[roomId].locked) {
         send(clientSocket, "invalid room|", 13, 0);
         return true;
       }
@@ -350,14 +358,16 @@ void changeUserRole(int clientSocket, std::string request) {
     // LEAVE ROOM
     else if(request.substr(0, 5) == "leave"){ 
       int roomId = std::stoi(request.substr(5,request.find(" ")));
-      rooms_[roomId].removeUserById(clientSocket);
-      removeEmptyRooms(roomId);
+      deleteUserFromAllRooms(clientSocket);
+      removeEmptyRooms();
     } 
 
     // QUIT ie. DISCONNECT FROM SERVER
     else if (request.substr(0, 4) == "quit") {
-      std::cout << "[D] Client quit" << std::endl;
       close(clientSocket);
+      std::cout << "[D] Client quit" << std::endl;
+      deleteUserFromAllRooms(clientSocket);
+      removeEmptyRooms();
       return false;
     }
 
@@ -391,12 +401,26 @@ void changeUserRole(int clientSocket, std::string request) {
     //     }
   }
   // Remove empty rooms from the server
-  void removeEmptyRooms(int roomId) {
- 
-      if (rooms_[roomId].isEmpty()) {
-        rooms_.erase(roomId);
+  void removeEmptyRooms() {
+    std::vector<int> roomsToRemove;
+
+    for (auto it: rooms_) {
+      if (removeRoomIfEmpty(it.first)) {
+        roomsToRemove.push_back(it.first);
       }
-    
+    }
+
+    for (auto index : roomsToRemove) {
+      rooms_.erase(index);
+    }
+  }
+
+  bool removeRoomIfEmpty(int roomId) {
+    if (rooms_[roomId].isEmpty()) {
+      rooms_[roomId].locked = true;
+      return true;
+    }
+    return false;
   }
 };
 
