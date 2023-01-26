@@ -194,18 +194,23 @@ void changeUserRole(int clientSocket, std::string request) {
 
     // Change the role of the user
     if (role == 'M') {
-        rooms_[roomId].users_[userId].role_ = UserRole::MUSICIAN;
+      for (auto user : rooms_[roomId].users_) {
+        if (user.getRole() == UserRole::MUSICIAN) {
+          send(clientSocket, "Musician exists", 16, 0);
+          return;
+        }
+      }
+      rooms_[roomId].users_[userId].role_ = UserRole::MUSICIAN;
     } else if (role == 'L') {
         rooms_[roomId].users_[userId].role_ = UserRole::USER;
     } else {
-        send(clientSocket, "Invalid role\n", 14, 0);
+        send(clientSocket, "Invalid role", 13, 0);
         return;
     }
 
     // Send a confirmation message to the client
     std::string message = "ROLE|";
     message += role;
-    message += '\n';
     send(clientSocket, message.c_str(), message.length(), 0);
 }
 
